@@ -48,6 +48,38 @@ This document outlines the phased implementation plan for the Drone Hinge Contro
 **Surprises:**
 - The `dart_mavlink` package's API was straightforward to work with, making MAVLink integration easier than anticipated.
 
+### Phase 4: Drone Control Logic (Completed)
+
+**Date:** 2025-11-05
+
+**Actions:**
+- Implemented `DroneController` to connect `HingeAngleService` and `MavlinkService`.
+- Implemented hinge angle monitoring with automatic arm/disarm based on angle thresholds:
+  - 0-30 degrees: Disarm command
+  - 60-120 degrees: Arm command
+  - 150-180 degrees: RC override command
+- Implemented manual control methods: `takeoff()`, `land()`, `setMode()`
+- Added state tracking to prevent repeated commands for the same state
+- Updated `HomeScreen` UI with:
+  - Start/Stop monitoring buttons
+  - Real-time hinge angle and drone state display
+  - Manual control buttons (Takeoff, Land, Mode changes)
+- Created comprehensive unit tests for `DroneController` with 13 test cases
+- Ran code quality checks and all 18 tests passed successfully
+
+**Learnings:**
+- MAVLink command codes must be specified as numeric values rather than enum constants in dart_mavlink
+- State tracking is essential to avoid sending redundant commands to the drone
+- `RcChannelsOverride` message requires all 18 channels to be specified, even unused ones
+- Mocktail requires fallback value registration for custom types like `MavlinkFrame`
+
+**Deviations:**
+- None. Implementation followed the design as specified
+
+**Surprises:**
+- The controller logic was straightforward to implement and test
+- All unit tests passed on the first run after fixing the mocktail fallback registration
+
 ---
 
 ## Phase 1: Project Setup and Basic Structure
@@ -106,19 +138,19 @@ This document outlines the phased implementation plan for the Drone Hinge Contro
 
 ## Phase 4: Drone Control Logic
 
-- [ ] Implement the `DroneController` to connect the `HingeAngleService` and `MavlinkService`.
-- [ ] Implement the logic to arm/disarm the drone based on the hinge angle.
-- [ ] Implement the logic to send RC override commands at 180 degrees.
-- [ ] Implement the takeoff and land commands.
-- [ ] Implement the mode change commands.
-- [ ] Create a UI with buttons to test the takeoff, land, and mode change functionalities.
-- [ ] Create unit tests for the `DroneController`.
-- [ ] Run `dart fix --apply` to clean up the code.
-- [ ] Run `flutter analyze` and fix any issues.
-- [ ] Run tests to ensure they all pass.
-- [ ] Run `dart format .` to format the code.
-- [ ] Re-read `IMPLEMENTATION.md` to see what, if anything, has changed.
-- [ ] Update the `IMPLEMENTATION.md` file with the current state.
+- [x] Implement the `DroneController` to connect the `HingeAngleService` and `MavlinkService`.
+- [x] Implement the logic to arm/disarm the drone based on the hinge angle.
+- [x] Implement the logic to send RC override commands at 180 degrees.
+- [x] Implement the takeoff and land commands.
+- [x] Implement the mode change commands.
+- [x] Create a UI with buttons to test the takeoff, land, and mode change functionalities.
+- [x] Create unit tests for the `DroneController`.
+- [x] Run `dart fix --apply` to clean up the code.
+- [x] Run `flutter analyze` and fix any issues.
+- [x] Run tests to ensure they all pass.
+- [x] Run `dart format .` to format the code.
+- [x] Re-read `IMPLEMENTATION.md` to see what, if anything, has changed.
+- [x] Update the `IMPLEMENTATION.md` file with the current state.
 - [ ] Use `git diff` to verify the changes and create a commit message.
 - [ ] Wait for user approval before committing.
 

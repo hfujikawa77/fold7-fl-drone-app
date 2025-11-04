@@ -5,12 +5,17 @@ import 'dart:typed_data';
 class RawDatagramSocketService {
   RawDatagramSocket? _socket;
 
-  Future<RawDatagramSocketService> bind(InternetAddress address, int port) async {
+  Future<RawDatagramSocketService> bind(
+    InternetAddress address,
+    int port,
+  ) async {
     _socket = await RawDatagramSocket.bind(address, port);
     return this;
   }
 
-  StreamSubscription<RawSocketEvent> listen(void Function(RawSocketEvent event)? onData) {
+  StreamSubscription<RawSocketEvent> listen(
+    void Function(RawSocketEvent event)? onData,
+  ) {
     return _socket!.listen(onData);
   }
 

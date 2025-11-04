@@ -3,15 +3,19 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dart_mavlink/mavlink.dart';
-import 'package:dart_mavlink/dialects/ardupilotmega.dart' as mavlink_ardupilotmega;
+import 'package:dart_mavlink/dialects/ardupilotmega.dart'
+    as mavlink_ardupilotmega;
 import 'package:drone_hinge_control/data/services/raw_datagram_socket_service.dart';
 
 class MavlinkService {
   RawDatagramSocketService? _socketService;
-  StreamController<MavlinkFrame> _inputStreamController = StreamController.broadcast();
+  final StreamController<MavlinkFrame> _inputStreamController =
+      StreamController.broadcast();
   Stream<MavlinkFrame> get inputStream => _inputStreamController.stream;
 
-  final MavlinkParser _parser = MavlinkParser(mavlink_ardupilotmega.MavlinkDialectArdupilotmega());
+  final MavlinkParser _parser = MavlinkParser(
+    mavlink_ardupilotmega.MavlinkDialectArdupilotmega(),
+  );
 
   bool _isConnected = false;
   bool get isConnected => _isConnected;
@@ -19,14 +23,16 @@ class MavlinkService {
   final RawDatagramSocketService Function()? _socketServiceFactory;
 
   MavlinkService({RawDatagramSocketService Function()? socketServiceFactory})
-      : _socketServiceFactory = socketServiceFactory;
+    : _socketServiceFactory = socketServiceFactory;
 
   Future<void> connect(String address, int port) async {
     if (_isConnected) {
       disconnect();
     }
     try {
-      _socketService = await (_socketServiceFactory ?? () => RawDatagramSocketService())().bind(InternetAddress.anyIPv4, 0);
+      _socketService =
+          await (_socketServiceFactory ?? () => RawDatagramSocketService())()
+              .bind(InternetAddress.anyIPv4, 0);
       _socketService!.listen((RawSocketEvent event) {
         if (event == RawSocketEvent.read) {
           Datagram? datagram = _socketService!.receive();
@@ -55,7 +61,11 @@ class MavlinkService {
   void sendMessage(MavlinkFrame frame) {
     if (_isConnected) {
       final bytes = frame.serialize();
-      _socketService?.send(bytes, InternetAddress.loopbackIPv4, 14550); // Assuming simulator listens on 14550
+      _socketService?.send(
+        bytes,
+        InternetAddress.loopbackIPv4,
+        14550,
+      ); // Assuming simulator listens on 14550
     }
   }
 
