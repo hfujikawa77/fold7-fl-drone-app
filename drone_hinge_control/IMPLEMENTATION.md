@@ -6,6 +6,48 @@ This document outlines the phased implementation plan for the Drone Hinge Contro
 
 *This section will be updated after each phase to log actions, learnings, surprises, and deviations from the plan.*
 
+### Phase 2: Hinge Angle Service Implementation (Completed)
+
+**Date:** 2025-11-05
+
+**Actions:**
+- Implemented `HingeAngleService` using the `dual_screen` package to provide a stream of hinge angle data.
+- Created a simple UI in `HomeScreen` to display the real-time hinge angle value.
+- Created unit tests for `HingeAngleService` to verify the stream functionality.
+- Ran code quality checks: `dart fix --apply`, `flutter analyze`, `dart format .`
+- All tests passed successfully.
+
+**Learnings:**
+- The `dual_screen` package provides a straightforward API for accessing hinge angle data on foldable devices.
+- Stream-based architecture works well for real-time sensor data.
+
+**Deviations:**
+- None. Implementation followed the design as planned.
+
+### Phase 3: MAVLink Service and Basic Communication (Completed)
+
+**Date:** 2025-11-05
+
+**Actions:**
+- Implemented `MavlinkService` to establish UDP connection with Mission Planner simulator.
+- Created `RawDatagramSocketService` as an abstraction layer for UDP socket operations, making the code more testable.
+- Implemented heartbeat message sending at regular intervals (1 Hz).
+- Implemented message receiving and parsing using the `dart_mavlink` package.
+- Created a UI to display connection status and received MAVLink messages.
+- Created comprehensive unit tests for `MavlinkService`, including mocking of socket operations.
+- Ran code quality checks and all tests passed.
+
+**Learnings:**
+- The `dart_mavlink` package provides good MAVLink protocol support, but requires careful buffer management.
+- UDP socket operations need to be abstracted for testability, leading to the creation of `RawDatagramSocketService`.
+- Connection state management is important for robust communication.
+
+**Deviations:**
+- Added `RawDatagramSocketService` as an additional abstraction layer not originally specified in the design. This improves testability and separation of concerns.
+
+**Surprises:**
+- The `dart_mavlink` package's API was straightforward to work with, making MAVLink integration easier than anticipated.
+
 ---
 
 ## Phase 1: Project Setup and Basic Structure
@@ -37,8 +79,8 @@ This document outlines the phased implementation plan for the Drone Hinge Contro
 - [x] Run `flutter analyze` and fix any issues.
 - [x] Run tests to ensure they all pass.
 - [x] Run `dart format .` to format the code.
-- [ ] Re-read `IMPLEMENTATION.md` to see what, if anything, has changed.
-- [ ] Update the `IMPLEMENTATION.md` file with the current state.
+- [x] Re-read `IMPLEMENTATION.md` to see what, if anything, has changed.
+- [x] Update the `IMPLEMENTATION.md` file with the current state.
 - [ ] Use `git diff` to verify the changes and create a commit message.
 - [ ] Wait for user approval before committing.
 
@@ -46,17 +88,17 @@ This document outlines the phased implementation plan for the Drone Hinge Contro
 
 ## Phase 3: MAVLink Service and Basic Communication
 
-- [ ] Implement the basic `MavlinkService` to connect to the Mission Planner simulator via UDP.
-- [ ] Implement methods for sending heartbeat messages.
-- [ ] Implement methods for receiving messages and parsing them.
-- [ ] Create a simple UI to display connection status and received messages to verify the service.
-- [ ] Create unit tests for the `MavlinkService`.
-- [ ] Run `dart fix --apply` to clean up the code.
-- [ ] Run `flutter analyze` and fix any issues.
-- [ ] Run tests to ensure they all pass.
-- [ ] Run `dart format .` to format the code.
-- [ ] Re-read `IMPLEMENTATION.md` to see what, if anything, has changed.
-- [ ] Update the `IMPLEMENTATION.md` file with the current state.
+- [x] Implement the basic `MavlinkService` to connect to the Mission Planner simulator via UDP.
+- [x] Implement methods for sending heartbeat messages.
+- [x] Implement methods for receiving messages and parsing them.
+- [x] Create a simple UI to display connection status and received messages to verify the service.
+- [x] Create unit tests for the `MavlinkService`.
+- [x] Run `dart fix --apply` to clean up the code.
+- [x] Run `flutter analyze` and fix any issues.
+- [x] Run tests to ensure they all pass.
+- [x] Run `dart format .` to format the code.
+- [x] Re-read `IMPLEMENTATION.md` to see what, if anything, has changed.
+- [x] Update the `IMPLEMENTATION.md` file with the current state.
 - [ ] Use `git diff` to verify the changes and create a commit message.
 - [ ] Wait for user approval before committing.
 
