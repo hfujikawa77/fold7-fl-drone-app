@@ -156,13 +156,14 @@ This document outlines the phased implementation plan for the Drone Hinge Contro
 
 ---
 
-## Phase 5: Map and Telemetry UI
+## Phase 5: Map and Telemetry UI (In Progress)
 
 - [ ] Implement the `MapView` using `flutter_map`.
 - [ ] Display the drone's position on the map based on the data from `MavlinkService`.
 - [ ] Display the device's current location on the map.
 - [ ] Implement the `TelemetryView` to display attitude, altitude, and other data from `MavlinkService`.
 - [ ] Integrate the `MapView` and `TelemetryView` into the main screen.
+- [x] Add required dependencies (`flutter_map`, `latlong2`, `geolocator`) to `pubspec.yaml`.
 - [ ] Run `dart fix --apply` to clean up the code.
 - [ ] Run `flutter analyze` and fix any issues.
 - [ ] Run tests to ensure they all pass.
@@ -171,6 +172,8 @@ This document outlines the phased implementation plan for the Drone Hinge Contro
 - [ ] Update the `IMPLEMENTATION.md` file with the current state.
 - [ ] Use `git diff` to verify the changes and create a commit message.
 - [ ] Wait for user approval before committing.
+
+**Note:** Phase 5 implementation has been started with dependency setup but will be completed in the next session.
 
 ---
 
