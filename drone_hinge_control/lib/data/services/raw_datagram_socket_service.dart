@@ -13,6 +13,8 @@ class RawDatagramSocketService {
     return this;
   }
 
+  int? get port => _socket?.port;
+
   StreamSubscription<RawSocketEvent> listen(
     void Function(RawSocketEvent event)? onData,
   ) {

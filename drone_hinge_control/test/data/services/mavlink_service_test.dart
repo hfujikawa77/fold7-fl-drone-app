@@ -33,6 +33,7 @@ void main() {
       when(
         () => mockRawDatagramSocketService.bind(any(), any()),
       ).thenAnswer((_) async => mockRawDatagramSocketService);
+      when(() => mockRawDatagramSocketService.port).thenReturn(14551);
       when(() => mockRawDatagramSocketService.listen(any())).thenAnswer((
         invocation,
       ) {
@@ -58,6 +59,12 @@ void main() {
     test('connect sets isConnected to true on success', () async {
       await mavlinkService.connect('127.0.0.1', 14550);
       expect(mavlinkService.isConnected, isTrue);
+      verify(
+        () => mockRawDatagramSocketService.bind(
+          InternetAddress.anyIPv4,
+          14551,
+        ),
+      ).called(1);
     });
 
     test('disconnect sets isConnected to false', () async {
@@ -72,7 +79,19 @@ void main() {
 
       verify(
         () => mockRawDatagramSocketService.send(any(), any(), any()),
-      ).called(1);
+      ).called(6); // Initial handshake + explicit call
+    });
+
+    test('connect sends initial heartbeat to configured endpoint', () async {
+      await mavlinkService.connect('127.0.0.1', 14550);
+
+      verify(
+        () => mockRawDatagramSocketService.send(
+          any(),
+          any(),
+          14550,
+        ),
+      ).called(5);
     });
 
     test('inputStream emits received MAVLink frames', () async {

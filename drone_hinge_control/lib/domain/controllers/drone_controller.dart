@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:dart_mavlink/dialects/ardupilotmega.dart' as mavlink;
-import 'package:dart_mavlink/mavlink.dart';
 import 'package:drone_hinge_control/data/services/hinge_angle_service.dart';
 import 'package:drone_hinge_control/data/services/mavlink_service.dart';
 
@@ -95,8 +94,7 @@ class DroneController {
       param6: 0,
       param7: 0,
     );
-    final frame = MavlinkFrame.v2(0, 255, 1, armCommand);
-    _mavlinkService.sendMessage(frame);
+    _mavlinkService.sendCommand(armCommand);
     print('Arm command sent (hinge angle: $_lastHingeAngle)');
   }
 
@@ -115,8 +113,7 @@ class DroneController {
       param6: 0,
       param7: 0,
     );
-    final frame = MavlinkFrame.v2(0, 255, 1, disarmCommand);
-    _mavlinkService.sendMessage(frame);
+    _mavlinkService.sendCommand(disarmCommand);
     print('Disarm command sent (hinge angle: $_lastHingeAngle)');
   }
 
@@ -146,8 +143,7 @@ class DroneController {
       chan17Raw: 0,
       chan18Raw: 0,
     );
-    final frame = MavlinkFrame.v2(0, 255, 1, rcOverride);
-    _mavlinkService.sendMessage(frame);
+    _mavlinkService.sendCommand(rcOverride);
     print('RC Override command sent (hinge angle: $_lastHingeAngle)');
   }
 
@@ -166,8 +162,7 @@ class DroneController {
       param6: 0, // Longitude
       param7: altitude, // Altitude
     );
-    final frame = MavlinkFrame.v2(0, 255, 1, takeoffCommand);
-    _mavlinkService.sendMessage(frame);
+    _mavlinkService.sendCommand(takeoffCommand);
     print('Takeoff command sent (altitude: $altitude)');
   }
 
@@ -186,8 +181,7 @@ class DroneController {
       param6: 0, // Longitude
       param7: 0, // Altitude
     );
-    final frame = MavlinkFrame.v2(0, 255, 1, landCommand);
-    _mavlinkService.sendMessage(frame);
+    _mavlinkService.sendCommand(landCommand);
     print('Land command sent');
   }
 
@@ -228,21 +222,12 @@ class DroneController {
       return;
     }
 
-    final setModeCommand = mavlink.CommandLong(
+    final setModeMessage = mavlink.SetMode(
       targetSystem: 1,
-      targetComponent: 1,
-      command: 176, // MAV_CMD_DO_SET_MODE
-      confirmation: 0,
-      param1: 1, // MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
-      param2: modeNumber.toDouble(), // Custom mode number
-      param3: 0,
-      param4: 0,
-      param5: 0,
-      param6: 0,
-      param7: 0,
+      baseMode: 1, // MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
+      customMode: modeNumber,
     );
-    final frame = MavlinkFrame.v2(0, 255, 1, setModeCommand);
-    _mavlinkService.sendMessage(frame);
+    _mavlinkService.sendCommand(setModeMessage);
     print('Set mode command sent: $mode ($modeNumber)');
   }
 

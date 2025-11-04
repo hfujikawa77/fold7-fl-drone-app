@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:dart_mavlink/mavlink.dart';
 import 'package:drone_hinge_control/data/services/hinge_angle_service.dart';
 import 'package:drone_hinge_control/data/services/mavlink_service.dart';
 import 'package:drone_hinge_control/domain/controllers/drone_controller.dart';
@@ -11,13 +10,7 @@ class MockHingeAngleService extends Mock implements HingeAngleService {}
 
 class MockMavlinkService extends Mock implements MavlinkService {}
 
-class FakeMavlinkFrame extends Fake implements MavlinkFrame {}
-
 void main() {
-  setUpAll(() {
-    registerFallbackValue(FakeMavlinkFrame());
-  });
-
   group('DroneController', () {
     late DroneController droneController;
     late MockHingeAngleService mockHingeAngleService;
@@ -32,7 +25,7 @@ void main() {
       when(
         () => mockHingeAngleService.hingeAngleStream,
       ).thenAnswer((_) => hingeAngleController.stream);
-      when(() => mockMavlinkService.sendMessage(any())).thenReturn(null);
+      when(() => mockMavlinkService.sendCommand(any())).thenAnswer((_) {});
 
       droneController = DroneController(
         hingeAngleService: mockHingeAngleService,
@@ -69,7 +62,7 @@ void main() {
 
       expect(droneController.currentState, DroneState.disarmed);
       expect(droneController.currentHingeAngle, 15.0);
-      verify(() => mockMavlinkService.sendMessage(any())).called(1);
+      verify(() => mockMavlinkService.sendCommand(any())).called(1);
     });
 
     test('hinge angle 60-120 degrees triggers arm command', () async {
@@ -80,7 +73,7 @@ void main() {
 
       expect(droneController.currentState, DroneState.armed);
       expect(droneController.currentHingeAngle, 90.0);
-      verify(() => mockMavlinkService.sendMessage(any())).called(1);
+      verify(() => mockMavlinkService.sendCommand(any())).called(1);
     });
 
     test('hinge angle 150-180 degrees triggers RC override', () async {
@@ -91,7 +84,7 @@ void main() {
 
       expect(droneController.currentState, DroneState.rcOverride);
       expect(droneController.currentHingeAngle, 170.0);
-      verify(() => mockMavlinkService.sendMessage(any())).called(1);
+      verify(() => mockMavlinkService.sendCommand(any())).called(1);
     });
 
     test('state transitions do not trigger repeated commands', () async {
@@ -106,7 +99,7 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 100));
 
       // Should only send one arm command
-      verify(() => mockMavlinkService.sendMessage(any())).called(1);
+      verify(() => mockMavlinkService.sendCommand(any())).called(1);
     });
 
     test('state changes from armed to disarmed', () async {
@@ -122,27 +115,27 @@ void main() {
 
       expect(droneController.currentState, DroneState.disarmed);
       // Should send both arm and disarm commands
-      verify(() => mockMavlinkService.sendMessage(any())).called(2);
+      verify(() => mockMavlinkService.sendCommand(any())).called(2);
     });
 
     test('takeoff sends takeoff command', () {
       droneController.takeoff(altitude: 15.0);
-      verify(() => mockMavlinkService.sendMessage(any())).called(1);
+      verify(() => mockMavlinkService.sendCommand(any())).called(1);
     });
 
     test('land sends land command', () {
       droneController.land();
-      verify(() => mockMavlinkService.sendMessage(any())).called(1);
+      verify(() => mockMavlinkService.sendCommand(any())).called(1);
     });
 
     test('setMode sends mode change command for valid mode', () {
       droneController.setMode('GUIDED');
-      verify(() => mockMavlinkService.sendMessage(any())).called(1);
+      verify(() => mockMavlinkService.sendCommand(any())).called(1);
     });
 
     test('setMode does not send command for invalid mode', () {
       droneController.setMode('INVALID_MODE');
-      verifyNever(() => mockMavlinkService.sendMessage(any()));
+      verifyNever(() => mockMavlinkService.sendCommand(any()));
     });
 
     test('dispose stops monitoring', () {

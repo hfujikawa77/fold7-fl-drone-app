@@ -9,6 +9,7 @@ import 'package:drone_hinge_control/presentation/widgets/map_view.dart';
 import 'package:drone_hinge_control/presentation/widgets/telemetry_view.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' as latlng2 show Distance;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,13 +22,16 @@ class _HomeScreenState extends State<HomeScreen> {
   final HingeAngleService _hingeAngleService = HingeAngleService();
   final MavlinkService _mavlinkService = MavlinkService();
   final LocationService _locationService = LocationService();
+  final latlng2.Distance _distance = latlng2.Distance();
   late final DroneController _droneController;
   final List<String> _receivedMessages = [];
+  final List<LatLng> _dronePath = [];
   StreamSubscription? _mavlinkSubscription;
   StreamSubscription? _positionSubscription;
   StreamSubscription? _attitudeSubscription;
   StreamSubscription? _locationSubscription;
   bool _isMonitoring = false;
+  bool _autoCenter = true;
 
   // Telemetry data
   mavlink.GlobalPositionInt? _dronePosition;
@@ -56,6 +60,16 @@ class _HomeScreenState extends State<HomeScreen> {
     _positionSubscription = _mavlinkService.positionStream.listen((position) {
       setState(() {
         _dronePosition = position;
+        final newPoint = LatLng(position.lat / 1e7, position.lon / 1e7);
+        if (_dronePath.isEmpty) {
+          _dronePath.add(newPoint);
+        } else {
+          final last = _dronePath.last;
+          if (_distance(last, newPoint) > 1) {
+            // Add point when moved more than 1 meter to keep path manageable
+            _dronePath.add(newPoint);
+          }
+        }
       });
     });
 
@@ -112,7 +126,9 @@ class _HomeScreenState extends State<HomeScreen> {
             flex: 3,
             child: MapView(
               dronePosition: _dronePosition,
+              dronePath: _dronePath,
               devicePosition: _devicePosition,
+              autoCenter: _autoCenter,
             ),
           ),
 
@@ -136,6 +152,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildConnectionSection(),
+                        const SizedBox(height: 16.0),
+                        _buildMapControls(),
                         const SizedBox(height: 16.0),
                         _buildMonitoringSection(),
                         const SizedBox(height: 16.0),
@@ -169,7 +187,8 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             ElevatedButton(
               onPressed: () async {
-                await _mavlinkService.connect('127.0.0.1', 14550);
+                // await _mavlinkService.connect('127.0.0.1', 14550);
+                await _mavlinkService.connect('192.168.3.38', 14550);
                 setState(() {});
               },
               child: const Text('Connect MAVLink'),
@@ -307,6 +326,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             ElevatedButton(
               onPressed: () {
+                _droneController.setMode('AUTO');
+              },
+              child: const Text('AUTO Mode'),
+            ),
+            ElevatedButton(
+              onPressed: () {
                 _droneController.setMode('RTL');
               },
               child: const Text('RTL Mode'),
@@ -355,6 +380,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   },
                 ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMapControls() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
+      children: [
+        Checkbox(
+          value: _autoCenter,
+          onChanged: (value) {
+            setState(() {
+              _autoCenter = value ?? true;
+            });
+          },
+        ),
+        const SizedBox(width: 4),
+        const Text(
+          'Auto-pan to drone',
+          style: TextStyle(fontSize: 16),
         ),
       ],
     );
