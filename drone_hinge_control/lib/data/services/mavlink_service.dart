@@ -13,6 +13,16 @@ class MavlinkService {
       StreamController.broadcast();
   Stream<MavlinkFrame> get inputStream => _inputStreamController.stream;
 
+  final StreamController<mavlink_ardupilotmega.GlobalPositionInt>
+  _positionStreamController = StreamController.broadcast();
+  Stream<mavlink_ardupilotmega.GlobalPositionInt> get positionStream =>
+      _positionStreamController.stream;
+
+  final StreamController<mavlink_ardupilotmega.Attitude>
+  _attitudeStreamController = StreamController.broadcast();
+  Stream<mavlink_ardupilotmega.Attitude> get attitudeStream =>
+      _attitudeStreamController.stream;
+
   final MavlinkParser _parser = MavlinkParser(
     mavlink_ardupilotmega.MavlinkDialectArdupilotmega(),
   );
@@ -43,6 +53,17 @@ class MavlinkService {
       });
       _parser.stream.listen((MavlinkFrame frame) {
         _inputStreamController.add(frame);
+
+        // Parse specific message types
+        if (frame.message is mavlink_ardupilotmega.GlobalPositionInt) {
+          _positionStreamController.add(
+            frame.message as mavlink_ardupilotmega.GlobalPositionInt,
+          );
+        } else if (frame.message is mavlink_ardupilotmega.Attitude) {
+          _attitudeStreamController.add(
+            frame.message as mavlink_ardupilotmega.Attitude,
+          );
+        }
       });
       _isConnected = true;
       print('Connected to MAVLink simulator at $address:$port');
@@ -56,6 +77,13 @@ class MavlinkService {
     _socketService?.close();
     _isConnected = false;
     print('Disconnected from MAVLink simulator');
+  }
+
+  void dispose() {
+    disconnect();
+    _inputStreamController.close();
+    _positionStreamController.close();
+    _attitudeStreamController.close();
   }
 
   void sendMessage(MavlinkFrame frame) {
