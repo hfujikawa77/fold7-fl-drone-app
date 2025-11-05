@@ -12,7 +12,9 @@
       "Bash(flutter clean:*)",
       "Bash(cat:*)",
       "Bash(sed:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(git log:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []
