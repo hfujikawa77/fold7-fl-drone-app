@@ -9,7 +9,10 @@
       "Bash(dart format:*)",
       "Bash(git reset:*)",
       "Bash(flutter pub get:*)",
-      "Bash(flutter clean:*)"
+      "Bash(flutter clean:*)",
+      "Bash(cat:*)",
+      "Bash(sed:*)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []

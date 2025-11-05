@@ -60,26 +60,26 @@
 
 ```mermaid
 graph TD
-    A[UI Layer (Presentation)] --> B[Business Logic Layer (Domain)]
-    B --> C[Data/Service Layer]
-
-    subgraph C[Data/Service Layer]
-        C1[MavlinkService]
-        C2[HingeAngleService]
-        C3[LocationService]
+    subgraph UI[UI Layer - Presentation]
+        A1[MapView]
+        A2[TelemetryView]
+        A3[ControlPanel]
     end
 
-    subgraph B[Business Logic Layer (Domain)]
+    subgraph BL[Business Logic Layer - Domain]
         B1[DroneController]
         B2[MapController]
         B3[UIStateNotifier]
     end
 
-    subgraph A[UI Layer (Presentation)]
-        A1[MapView]
-        A2[TelemetryView]
-        A3[ControlPanel]
+    subgraph DL[Data/Service Layer]
+        C1[MavlinkService]
+        C2[HingeAngleService]
+        C3[LocationService]
     end
+
+    UI --> BL
+    BL --> DL
 ```
 
 *   **UI Layer:** 画面描画に責任を持つ。`flutter_map`を使った地図表示、ドローンの状態表示など。ユーザーからの入力を受け付け、Business Logic Layerに伝達する。
