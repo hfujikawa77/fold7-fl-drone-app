@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:dart_mavlink/dialects/ardupilotmega.dart' as mavlink;
+import 'package:drone_hinge_control/data/services/device_orientation_service.dart';
 import 'package:drone_hinge_control/data/services/hinge_angle_service.dart';
 import 'package:drone_hinge_control/data/services/location_service.dart';
 import 'package:drone_hinge_control/data/services/mavlink_service.dart';
 import 'package:drone_hinge_control/domain/controllers/drone_controller.dart';
+import 'package:drone_hinge_control/presentation/widgets/attitude_hud.dart';
 import 'package:drone_hinge_control/presentation/widgets/map_view.dart';
 import 'package:drone_hinge_control/presentation/widgets/telemetry_view.dart';
 import 'package:flutter/material.dart';
@@ -19,10 +21,55 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static const Map<int, String> _flightModeById = {
+    0: 'STABILIZE',
+    1: 'ACRO',
+    2: 'ALT HOLD',
+    3: 'AUTO',
+    4: 'GUIDED',
+    5: 'LOITER',
+    6: 'RTL',
+    7: 'CIRCLE',
+    9: 'LAND',
+    11: 'DRIFT',
+    13: 'SPORT',
+    14: 'FLIP',
+    15: 'AUTOTUNE',
+    16: 'POSHOLD',
+    17: 'BRAKE',
+    18: 'THROW',
+    19: 'AVOID_ADSB',
+    20: 'GUIDED_NOGPS',
+    21: 'SMART_RTL',
+    22: 'FLOWHOLD',
+    23: 'FOLLOW',
+    24: 'ZIGZAG',
+    25: 'SYSTEMID',
+    26: 'AUTOROTATE',
+  };
+  static const int _mavModeFlagSafetyArmed = 1 << 7;
+
   final HingeAngleService _hingeAngleService = HingeAngleService();
+  final DeviceOrientationService _orientationService =
+      DeviceOrientationService();
   final MavlinkService _mavlinkService = MavlinkService();
   final LocationService _locationService = LocationService();
   final latlng2.Distance _distance = latlng2.Distance();
+  final TextEditingController _ipController = TextEditingController(
+    text: '192.168.4.1',
+  );
+  final TextEditingController _portController = TextEditingController(
+    text: '14555',
+  );
+  final TextEditingController _localPortController = TextEditingController(
+    text: '14550',
+  );
+  final TextEditingController _systemIdController = TextEditingController(
+    text: '201',
+  );
+  final TextEditingController _componentIdController = TextEditingController(
+    text: '191',
+  );
   late final DroneController _droneController;
   final List<String> _receivedMessages = [];
   final List<LatLng> _dronePath = [];
@@ -30,13 +77,25 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription? _positionSubscription;
   StreamSubscription? _attitudeSubscription;
   StreamSubscription? _locationSubscription;
+  StreamSubscription? _heartbeatSubscription;
+  StreamSubscription? _batterySubscription;
+  StreamSubscription? _commandAckSubscription;
+  StreamSubscription<DeviceOrientationReading>? _tiltSubscription;
   bool _isMonitoring = false;
   bool _autoCenter = true;
+  bool _tiltControlEnabled = false;
+  bool _armCommandPending = false;
+  bool? _pendingArmState;
 
   // Telemetry data
   mavlink.GlobalPositionInt? _dronePosition;
   mavlink.Attitude? _droneAttitude;
   LatLng? _devicePosition;
+  mavlink.Heartbeat? _heartbeat;
+  mavlink.BatteryStatus? _batteryStatus;
+  bool _isArmed = false;
+  String _flightModeLabel = 'UNKNOWN';
+  DateTime? _lastTiltCommandSent;
 
   @override
   void initState() {
@@ -80,6 +139,23 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     });
 
+    _heartbeatSubscription = _mavlinkService.heartbeatStream.listen((hb) {
+      setState(() {
+        _heartbeat = hb;
+        _isArmed = (hb.baseMode & _mavModeFlagSafetyArmed) != 0;
+        _flightModeLabel = _flightModeById[hb.customMode] ??
+            'MODE ${hb.customMode}';
+      });
+    });
+
+    _batterySubscription = _mavlinkService.batteryStream.listen((battery) {
+      setState(() {
+        _batteryStatus = battery;
+      });
+    });
+    _commandAckSubscription =
+        _mavlinkService.commandAckStream.listen(_handleCommandAck);
+
     // Start device location tracking
     _startLocationTracking();
   }
@@ -110,8 +186,18 @@ class _HomeScreenState extends State<HomeScreen> {
     _positionSubscription?.cancel();
     _attitudeSubscription?.cancel();
     _locationSubscription?.cancel();
+    _heartbeatSubscription?.cancel();
+    _batterySubscription?.cancel();
+    _commandAckSubscription?.cancel();
+    _tiltSubscription?.cancel();
     _mavlinkService.dispose();
     _locationService.dispose();
+    _orientationService.dispose();
+    _ipController.dispose();
+    _portController.dispose();
+    _localPortController.dispose();
+    _systemIdController.dispose();
+    _componentIdController.dispose();
     super.dispose();
   }
 
@@ -121,14 +207,29 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(title: const Text('Drone Hinge Control')),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: _buildStatusHeader(),
+          ),
           // Map View - takes 60% of the screen
           Expanded(
             flex: 3,
-            child: MapView(
-              dronePosition: _dronePosition,
-              dronePath: _dronePath,
-              devicePosition: _devicePosition,
-              autoCenter: _autoCenter,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: MapView(
+                    dronePosition: _dronePosition,
+                    dronePath: _dronePath,
+                    devicePosition: _devicePosition,
+                    autoCenter: _autoCenter,
+                  ),
+                ),
+                Positioned(
+                  right: 16,
+                  bottom: 16,
+                  child: AttitudeHud(attitude: _droneAttitude),
+                ),
+              ],
             ),
           ),
 
@@ -141,7 +242,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   // Telemetry View
                   TelemetryView(
-                    attitude: _droneAttitude,
                     position: _dronePosition,
                   ),
 
@@ -158,6 +258,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         _buildMonitoringSection(),
                         const SizedBox(height: 16.0),
                         _buildHingeAngleDisplay(),
+                        const SizedBox(height: 16.0),
+                        _buildTiltControlSection(),
                         const SizedBox(height: 16.0),
                         _buildManualControls(),
                         const SizedBox(height: 16.0),
@@ -185,10 +287,156 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 8.0),
         Row(
           children: [
+            Expanded(
+              child: TextField(
+                controller: _ipController,
+                decoration: const InputDecoration(
+                  labelText: 'MAVLink IP address',
+                  hintText: 'e.g. 192.168.3.38',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8.0),
+            SizedBox(
+              width: 110,
+              child: TextField(
+                controller: _portController,
+                decoration: const InputDecoration(
+                  labelText: 'Remote port',
+                  hintText: '14555',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8.0),
+        Align(
+          alignment: Alignment.centerRight,
+          child: SizedBox(
+            width: 110,
+            child: TextField(
+              controller: _localPortController,
+              decoration: const InputDecoration(
+                labelText: 'Local port',
+                hintText: '14550',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8.0),
+        Row(
+          children: [
+            SizedBox(
+              width: 110,
+              child: TextField(
+                controller: _systemIdController,
+                decoration: const InputDecoration(
+                  labelText: 'System ID',
+                  hintText: '255',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: 8.0),
+            SizedBox(
+              width: 140,
+              child: TextField(
+                controller: _componentIdController,
+                decoration: const InputDecoration(
+                  labelText: 'Component ID',
+                  hintText: '190',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8.0),
+        Row(
+          children: [
             ElevatedButton(
               onPressed: () async {
-                // await _mavlinkService.connect('127.0.0.1', 14550);
-                await _mavlinkService.connect('192.168.3.38', 14550);
+                final ip = _ipController.text.trim();
+                final portText = _portController.text.trim();
+                final localPortText = _localPortController.text.trim();
+                final systemIdText = _systemIdController.text.trim();
+                final componentIdText = _componentIdController.text.trim();
+                if (ip.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Please enter an IP address before connecting.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                final port = int.tryParse(portText);
+                if (port == null || port <= 0 || port > 65535) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Please enter a valid port number (1-65535).',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                final localPort = int.tryParse(localPortText);
+                if (localPort == null || localPort <= 0 || localPort > 65535) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Please enter a valid local port number (1-65535).',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                final systemId = int.tryParse(systemIdText);
+                if (systemId == null || systemId < 1 || systemId > 255) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Please enter a valid system ID (1-255).',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                final componentId = int.tryParse(componentIdText);
+                if (componentId == null || componentId < 1 || componentId > 255) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Please enter a valid component ID (1-255).',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                _mavlinkService.updateIdentity(
+                  systemId: systemId,
+                  componentId: componentId,
+                );
+                await _mavlinkService.connect(
+                  ip,
+                  remotePort: port,
+                  localPort: localPort,
+                );
+                if (!mounted) {
+                  return;
+                }
                 setState(() {});
               },
               child: const Text('Connect MAVLink'),
@@ -300,6 +548,17 @@ class _HomeScreenState extends State<HomeScreen> {
           spacing: 8.0,
           runSpacing: 8.0,
           children: [
+            ElevatedButton.icon(
+              onPressed: _armCommandPending ? null : _handleArmToggle,
+              icon: Icon(_isArmed ? Icons.lock_open : Icons.lock),
+              label: Text(
+                _armCommandPending
+                    ? 'Waiting for ACK...'
+                    : _isArmed
+                        ? 'Disarm Drone'
+                        : 'Arm Drone',
+              ),
+            ),
             ElevatedButton(
               onPressed: () {
                 _droneController.takeoff();
@@ -346,6 +605,77 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
+  }
+
+  void _handleArmToggle() {
+    if (!_mavlinkService.isConnected) {
+      _showSnack('Connect to MAVLink before sending arm/disarm commands.');
+      return;
+    }
+    if (_armCommandPending) {
+      _showSnack('Arm/disarm command already pending acknowledgement.');
+      return;
+    }
+    final targetState = !_isArmed;
+    setState(() {
+      _armCommandPending = true;
+      _pendingArmState = targetState;
+    });
+    if (targetState) {
+      _droneController.arm();
+      _showSnack('Arm command sent, waiting for ACK...');
+    } else {
+      _droneController.disarm();
+      _showSnack('Disarm command sent, waiting for ACK...');
+    }
+  }
+
+  void _handleCommandAck(mavlink.CommandAck ack) {
+    final resultLabel = _describeCommandResult(ack.result);
+    if (ack.command == mavlink.mavCmdComponentArmDisarm) {
+      final accepted = ack.result == mavlink.mavResultAccepted;
+      setState(() {
+        if (accepted && _pendingArmState != null) {
+          _isArmed = _pendingArmState!;
+        }
+        _armCommandPending = false;
+        _pendingArmState = null;
+      });
+      _showSnack(
+        accepted
+            ? 'Arm/disarm acknowledged.'
+            : 'Arm/disarm rejected: $resultLabel (code ${ack.result}).',
+      );
+    }
+    setState(() {
+      _receivedMessages.add(
+        'ACK cmd=${ack.command} result=$resultLabel (${ack.result})',
+      );
+      if (_receivedMessages.length > 10) {
+        _receivedMessages.removeAt(0);
+      }
+    });
+  }
+
+  String _describeCommandResult(int result) {
+    switch (result) {
+      case mavlink.mavResultAccepted:
+        return 'ACCEPTED';
+      case mavlink.mavResultTemporarilyRejected:
+        return 'TEMP_REJECTED';
+      case mavlink.mavResultDenied:
+        return 'DENIED';
+      case mavlink.mavResultUnsupported:
+        return 'UNSUPPORTED';
+      case mavlink.mavResultFailed:
+        return 'FAILED';
+      case mavlink.mavResultInProgress:
+        return 'IN_PROGRESS';
+      case mavlink.mavResultCancelled:
+        return 'CANCELLED';
+      default:
+        return 'RESULT_$result';
+    }
   }
 
   Widget _buildReceivedMessages() {
@@ -398,11 +728,190 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
         const SizedBox(width: 4),
+        const Text('Auto-pan to drone', style: TextStyle(fontSize: 16)),
+      ],
+    );
+  }
+
+  Widget _buildTiltControlSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         const Text(
-          'Auto-pan to drone',
-          style: TextStyle(fontSize: 16),
+          'Tilt Control',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8.0),
+        Row(
+          children: [
+            ElevatedButton(
+              onPressed: () async {
+                if (_tiltControlEnabled) {
+                  await _stopTiltControl();
+                } else {
+                  await _startTiltControl();
+                }
+              },
+              child: Text(_tiltControlEnabled ? 'Disable Tilt Control' : 'Enable Tilt Control'),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              _tiltControlEnabled ? 'Active' : 'Inactive',
+              style: TextStyle(
+                color: _tiltControlEnabled ? Colors.green : Colors.grey,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Device roll/pitch steer the drone (RC override).',
+          style: TextStyle(color: Colors.black54),
         ),
       ],
+    );
+  }
+
+  Future<void> _startTiltControl() async {
+    if (!_mavlinkService.isConnected) {
+      _showSnack('Connect to MAVLink before enabling tilt control.');
+      return;
+    }
+    await _orientationService.start();
+    _tiltSubscription = _orientationService.orientationStream.listen((reading) {
+      final now = DateTime.now();
+      if (_lastTiltCommandSent != null &&
+          now.difference(_lastTiltCommandSent!).inMilliseconds < 50) {
+        return;
+      }
+      _lastTiltCommandSent = now;
+      _droneController.sendTiltControlCommand(
+        rollDegrees: reading.rollDegrees,
+        pitchDegrees: reading.pitchDegrees,
+      );
+    });
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _tiltControlEnabled = true;
+    });
+  }
+
+  Future<void> _stopTiltControl() async {
+    await _tiltSubscription?.cancel();
+    _tiltSubscription = null;
+    await _orientationService.stop();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _tiltControlEnabled = false;
+    });
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Widget _buildStatusHeader() {
+    final batteryPercent = _batteryStatus?.batteryRemaining ?? -1;
+    final hasBattery = batteryPercent >= 0;
+    final batteryColor = !hasBattery
+        ? Colors.grey
+        : batteryPercent > 50
+            ? Colors.greenAccent
+            : batteryPercent > 20
+                ? Colors.orangeAccent
+                : Colors.redAccent;
+    final batteryLabel =
+        hasBattery ? 'Battery $batteryPercent%' : 'Battery --%';
+
+    final readinessLabel = _isArmed ? 'Armed' : 'Disarmed';
+    final readinessColor = _isArmed ? Colors.greenAccent : Colors.redAccent;
+
+    final connectionLabel =
+        _mavlinkService.isConnected ? 'Connected' : 'Disconnected';
+    final connectionColor =
+        _mavlinkService.isConnected ? Colors.greenAccent : Colors.redAccent;
+    final connectionIcon =
+        _mavlinkService.isConnected ? Icons.wifi : Icons.wifi_off;
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Wrap(
+          spacing: 16,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _buildStatusChip(
+              context,
+              Icons.power_settings_new,
+              readinessLabel,
+              readinessColor,
+            ),
+            _buildStatusChip(
+              context,
+              Icons.flight_takeoff,
+              _flightModeLabel,
+              Colors.blueAccent,
+            ),
+            _buildStatusChip(
+              context,
+              Icons.battery_full,
+              batteryLabel,
+              batteryColor,
+            ),
+            _buildStatusChip(
+              context,
+              connectionIcon,
+              connectionLabel,
+              connectionColor,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(
+    BuildContext context,
+    IconData icon,
+    String label,
+    Color accentColor,
+  ) {
+    final theme = Theme.of(context);
+    final backgroundColor = theme.colorScheme.surfaceVariant;
+    final textColor = theme.colorScheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accentColor.withOpacity(0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: accentColor),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: textColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

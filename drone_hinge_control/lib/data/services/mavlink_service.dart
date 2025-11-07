@@ -8,7 +8,6 @@ import 'package:dart_mavlink/dialects/ardupilotmega.dart'
 import 'package:drone_hinge_control/data/services/raw_datagram_socket_service.dart';
 
 class MavlinkService {
-  static const int _localPort = 14551;
   static const int _globalPositionMessageId = 33; // GLOBAL_POSITION_INT
   static const int _attitudeMessageId = 30; // ATTITUDE
   static const int _streamExtra1 = 1; // RAW_SENSORS
@@ -21,10 +20,13 @@ class MavlinkService {
 
   InternetAddress? _remoteAddress;
   int? _remotePort;
+  int? _localPort;
   Timer? _heartbeatTimer;
   int _sequence = 0;
-  final int _systemId;
-  final int _componentId;
+  int _systemId;
+  int _componentId;
+  int get systemId => _systemId;
+  int get componentId => _componentId;
 
   final StreamController<mavlink_ardupilotmega.GlobalPositionInt>
   _positionStreamController = StreamController.broadcast();
@@ -36,12 +38,35 @@ class MavlinkService {
   Stream<mavlink_ardupilotmega.Attitude> get attitudeStream =>
       _attitudeStreamController.stream;
 
-  final MavlinkParser _parser = MavlinkParser(
-    mavlink_ardupilotmega.MavlinkDialectArdupilotmega(),
-  );
+  final StreamController<mavlink_ardupilotmega.Heartbeat>
+  _heartbeatStreamController = StreamController.broadcast();
+  Stream<mavlink_ardupilotmega.Heartbeat> get heartbeatStream =>
+      _heartbeatStreamController.stream;
+
+  final StreamController<mavlink_ardupilotmega.BatteryStatus>
+  _batteryStreamController = StreamController.broadcast();
+  Stream<mavlink_ardupilotmega.BatteryStatus> get batteryStream =>
+      _batteryStreamController.stream;
+
+  final StreamController<mavlink_ardupilotmega.CommandAck>
+  _commandAckStreamController = StreamController.broadcast();
+  Stream<mavlink_ardupilotmega.CommandAck> get commandAckStream =>
+      _commandAckStreamController.stream;
+
+  final StreamController<mavlink_ardupilotmega.Statustext>
+  _statustextStreamController = StreamController.broadcast();
+  Stream<mavlink_ardupilotmega.Statustext> get statustextStream =>
+      _statustextStreamController.stream;
+
+  MavlinkParser? _parser;
+  StreamSubscription<MavlinkFrame>? _parserSubscription;
 
   bool _isConnected = false;
   bool get isConnected => _isConnected;
+  int _targetSystemId = 1;
+  int _targetComponentId = 1;
+  int get targetSystemId => _targetSystemId;
+  int get targetComponentId => _targetComponentId;
 
   final RawDatagramSocketService Function()? _socketServiceFactory;
 
@@ -53,50 +78,44 @@ class MavlinkService {
         _systemId = systemId,
         _componentId = componentId;
 
-  Future<void> connect(String address, int port) async {
+  Future<void> connect(
+    String address, {
+    required int remotePort,
+    required int localPort,
+  }) async {
     if (_isConnected) {
       disconnect();
     }
     try {
       _socketService =
           await (_socketServiceFactory ?? () => RawDatagramSocketService())()
-              .bind(InternetAddress.anyIPv4, _localPort);
+              .bind(InternetAddress.anyIPv4, localPort);
       final remoteAddress = InternetAddress.tryParse(address) ??
           (await InternetAddress.lookup(address)).first;
       _remoteAddress = remoteAddress;
-      _remotePort = port;
+      _remotePort = remotePort;
+      _localPort = localPort;
       _sequence = 0;
+      _targetSystemId = 1;
+      _targetComponentId = 1;
       print(
         'MAVLink GCS identity: systemId=$_systemId componentId=$_componentId',
       );
-      final localPort = _socketService?.port;
-      if (localPort != null) {
-        print('Listening for MAVLink on 0.0.0.0:$localPort');
+      final boundPort = _socketService?.port;
+      if (boundPort != null) {
+        print('Listening for MAVLink on 0.0.0.0:$boundPort');
       }
+      _initializeParser();
       _socketService!.listen((RawSocketEvent event) {
         if (event == RawSocketEvent.read) {
           Datagram? datagram = _socketService!.receive();
           if (datagram != null) {
-            _parser.parse(Uint8List.view(datagram.data.buffer));
+            _parser?.parse(Uint8List.view(datagram.data.buffer));
           }
         }
       });
-      _parser.stream.listen((MavlinkFrame frame) {
-        _inputStreamController.add(frame);
-
-        // Parse specific message types
-        if (frame.message is mavlink_ardupilotmega.GlobalPositionInt) {
-          _positionStreamController.add(
-            frame.message as mavlink_ardupilotmega.GlobalPositionInt,
-          );
-        } else if (frame.message is mavlink_ardupilotmega.Attitude) {
-          _attitudeStreamController.add(
-            frame.message as mavlink_ardupilotmega.Attitude,
-          );
-        }
-      });
       _isConnected = true;
-      print('Connected to MAVLink simulator at $address:$port');
+      print('Connected to MAVLink simulator at $address:$remotePort');
       // Proactively announce ourselves so the simulator learns our UDP port.
       sendHeartbeat();
       _startHeartbeatTimer();
@@ -106,6 +125,7 @@ class MavlinkService {
       _isConnected = false;
       _remoteAddress = null;
       _remotePort = null;
+      _localPort = null;
       _heartbeatTimer?.cancel();
       _heartbeatTimer = null;
     }
@@ -116,10 +136,22 @@ class MavlinkService {
     _isConnected = false;
     _remoteAddress = null;
     _remotePort = null;
+    _localPort = null;
+    _targetSystemId = 1;
+    _targetComponentId = 1;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
     _sequence = 0;
+    _teardownParser();
     print('Disconnected from MAVLink simulator');
+  }
+
+  void updateIdentity({required int systemId, required int componentId}) {
+    _systemId = systemId;
+    _componentId = componentId;
+    print(
+      'Updated MAVLink GCS identity: systemId=$_systemId componentId=$_componentId',
+    );
   }
 
   void dispose() {
@@ -127,6 +159,10 @@ class MavlinkService {
     _inputStreamController.close();
     _positionStreamController.close();
     _attitudeStreamController.close();
+    _heartbeatStreamController.close();
+    _batteryStreamController.close();
+    _commandAckStreamController.close();
+    _teardownParser();
   }
 
   void sendMessage(MavlinkFrame frame) {
@@ -194,8 +230,8 @@ class MavlinkService {
     }
     final intervalUs = (1000000 / frequencyHz).round();
     final request = mavlink_ardupilotmega.CommandLong(
-      targetSystem: 1,
-      targetComponent: 1,
+      targetSystem: _targetSystemId,
+      targetComponent: _targetComponentId,
       command: 511, // MAV_CMD_SET_MESSAGE_INTERVAL
       confirmation: 0,
       param1: messageId.toDouble(),
@@ -214,8 +250,8 @@ class MavlinkService {
       return;
     }
     final request = mavlink_ardupilotmega.RequestDataStream(
-      targetSystem: 1,
-      targetComponent: 1,
+      targetSystem: _targetSystemId,
+      targetComponent: _targetComponentId,
       reqStreamId: streamId,
       reqMessageRate: rateHz,
       startStop: 1,
@@ -225,9 +261,9 @@ class MavlinkService {
 
   MavlinkFrame _buildFrame(dynamic message) {
     return MavlinkFrame.v2(
+      _nextSequence(),
       _systemId,
       _componentId,
-      _nextSequence(),
       message,
     );
   }
@@ -236,5 +272,57 @@ class MavlinkService {
     final current = _sequence;
     _sequence = (_sequence + 1) & 0xFF;
     return current;
+  }
+
+  void _initializeParser() {
+    _teardownParser();
+    _parser = MavlinkParser(
+      mavlink_ardupilotmega.MavlinkDialectArdupilotmega(),
+    );
+    _parserSubscription = _parser!.stream.listen((MavlinkFrame frame) {
+      _inputStreamController.add(frame);
+      _updateTargetIds(frame);
+
+      // Parse specific message types
+      if (frame.message is mavlink_ardupilotmega.GlobalPositionInt) {
+        _positionStreamController.add(
+          frame.message as mavlink_ardupilotmega.GlobalPositionInt,
+        );
+      } else if (frame.message is mavlink_ardupilotmega.Attitude) {
+        _attitudeStreamController.add(
+          frame.message as mavlink_ardupilotmega.Attitude,
+        );
+      } else if (frame.message is mavlink_ardupilotmega.Heartbeat) {
+        _heartbeatStreamController.add(
+          frame.message as mavlink_ardupilotmega.Heartbeat,
+        );
+      } else if (frame.message is mavlink_ardupilotmega.BatteryStatus) {
+        _batteryStreamController.add(
+          frame.message as mavlink_ardupilotmega.BatteryStatus,
+        );
+      } else if (frame.message is mavlink_ardupilotmega.CommandAck) {
+        _commandAckStreamController.add(
+          frame.message as mavlink_ardupilotmega.CommandAck,
+        );
+      } else if (frame.message is mavlink_ardupilotmega.Statustext) {
+        final statustext = frame.message as mavlink_ardupilotmega.Statustext;
+        _statustextStreamController.add(statustext);
+        print('STATUSTEXT [${statustext.severity}]: ${statustext.text}');
+      }
+    });
+  }
+
+  void _teardownParser() {
+    _parserSubscription?.cancel();
+    _parserSubscription = null;
+    _parser = null;
+  }
+
+  void _updateTargetIds(MavlinkFrame frame) {
+    if (frame.systemId == _systemId && frame.componentId == _componentId) {
+      return;
+    }
+    _targetSystemId = frame.systemId;
+    _targetComponentId = frame.componentId;
   }
 }

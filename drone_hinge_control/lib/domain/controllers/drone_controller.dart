@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'dart:math' as math;
+
 import 'package:dart_mavlink/dialects/ardupilotmega.dart' as mavlink;
 import 'package:drone_hinge_control/data/services/hinge_angle_service.dart';
 import 'package:drone_hinge_control/data/services/mavlink_service.dart';
@@ -12,16 +14,18 @@ class DroneController {
   StreamSubscription<double>? _hingeSubscription;
 
   // Hinge angle thresholds
-  static const double _disarmAngleMin = 0.0;
-  static const double _disarmAngleMax = 30.0;
-  static const double _armAngleMin = 60.0;
-  static const double _armAngleMax = 120.0;
-  static const double _rcOverrideAngleMin = 150.0;
-  static const double _rcOverrideAngleMax = 180.0;
+  static const double _disarmReferenceAngle = 0.0;
+  static const double _armReferenceAngle = 90.0;
+  static const double _angleToleranceDegrees = 15.0;
+  static const double _maxTiltDegrees = 35.0;
+  static const int _rcMidPwm = 1500;
+  static const int _rcDelta = 400;
 
   // State tracking to prevent repeated commands
   DroneState _currentState = DroneState.unknown;
   double _lastHingeAngle = 0.0;
+  int get _targetSystemId => _mavlinkService.targetSystemId;
+  int get _targetComponentId => _mavlinkService.targetComponentId;
 
   DroneController({
     required HingeAngleService hingeAngleService,
@@ -58,9 +62,6 @@ class DroneController {
         case DroneState.armed:
           _sendArmCommand();
           break;
-        case DroneState.rcOverride:
-          _startRcOverride();
-          break;
         case DroneState.unknown:
           break;
       }
@@ -69,25 +70,28 @@ class DroneController {
 
   /// Determine drone state based on hinge angle
   DroneState _determineStateFromAngle(double angle) {
-    if (angle >= _disarmAngleMin && angle <= _disarmAngleMax) {
+    if (_isWithinTolerance(angle, _disarmReferenceAngle)) {
       return DroneState.disarmed;
-    } else if (angle >= _armAngleMin && angle <= _armAngleMax) {
+    }
+    if (_isWithinTolerance(angle, _armReferenceAngle)) {
       return DroneState.armed;
-    } else if (angle >= _rcOverrideAngleMin && angle <= _rcOverrideAngleMax) {
-      return DroneState.rcOverride;
     }
     return DroneState.unknown;
+  }
+
+  bool _isWithinTolerance(double angle, double reference) {
+    return (angle - reference).abs() <= _angleToleranceDegrees;
   }
 
   /// Send arm command to the drone
   void _sendArmCommand() {
     final armCommand = mavlink.CommandLong(
-      targetSystem: 1,
-      targetComponent: 1,
+      targetSystem: _targetSystemId,
+      targetComponent: _targetComponentId,
       command: 400, // MAV_CMD_COMPONENT_ARM_DISARM
       confirmation: 0,
       param1: 1, // 1 to arm
-      param2: 0,
+      param2: 21196, // Magic number for arming confirmation
       param3: 0,
       param4: 0,
       param5: 0,
@@ -101,8 +105,8 @@ class DroneController {
   /// Send disarm command to the drone
   void _sendDisarmCommand() {
     final disarmCommand = mavlink.CommandLong(
-      targetSystem: 1,
-      targetComponent: 1,
+      targetSystem: _targetSystemId,
+      targetComponent: _targetComponentId,
       command: 400, // MAV_CMD_COMPONENT_ARM_DISARM
       confirmation: 0,
       param1: 0, // 0 to disarm
@@ -117,21 +121,33 @@ class DroneController {
     print('Disarm command sent (hinge angle: $_lastHingeAngle)');
   }
 
-  /// Start RC override at 180 degrees
-  void _startRcOverride() {
-    // Send RC_CHANNELS_OVERRIDE message
-    // This is a placeholder implementation - actual values should be determined based on requirements
+  /// Manually arm the drone.
+  void arm() {
+    _sendArmCommand();
+  }
+
+  /// Manually disarm the drone.
+  void disarm() {
+    _sendDisarmCommand();
+  }
+
+  void sendTiltControlCommand({
+    required double rollDegrees,
+    required double pitchDegrees,
+  }) {
+    final rollPwm = _mapDegreesToPwm(rollDegrees);
+    final pitchPwm = _mapDegreesToPwm(pitchDegrees);
     final rcOverride = mavlink.RcChannelsOverride(
-      targetSystem: 1,
-      targetComponent: 1,
-      chan1Raw: 1500, // Roll (centered)
-      chan2Raw: 1500, // Pitch (centered)
-      chan3Raw: 1500, // Throttle (mid)
-      chan4Raw: 1500, // Yaw (centered)
-      chan5Raw: 65535, // Unused
-      chan6Raw: 65535, // Unused
-      chan7Raw: 65535, // Unused
-      chan8Raw: 65535, // Unused
+      targetSystem: _targetSystemId,
+      targetComponent: _targetComponentId,
+      chan1Raw: rollPwm,
+      chan2Raw: pitchPwm,
+      chan3Raw: _rcMidPwm,
+      chan4Raw: _rcMidPwm,
+      chan5Raw: 65535,
+      chan6Raw: 65535,
+      chan7Raw: 65535,
+      chan8Raw: 65535,
       chan9Raw: 0,
       chan10Raw: 0,
       chan11Raw: 0,
@@ -144,14 +160,20 @@ class DroneController {
       chan18Raw: 0,
     );
     _mavlinkService.sendCommand(rcOverride);
-    print('RC Override command sent (hinge angle: $_lastHingeAngle)');
+  }
+
+  int _mapDegreesToPwm(double degrees) {
+    final clamped = degrees.clamp(-_maxTiltDegrees, _maxTiltDegrees);
+    final normalized = clamped / _maxTiltDegrees;
+    final pwm = (_rcMidPwm + normalized * _rcDelta).round();
+    return math.max(1000, math.min(2000, pwm));
   }
 
   /// Send takeoff command to the drone
   void takeoff({double altitude = 10.0}) {
     final takeoffCommand = mavlink.CommandLong(
-      targetSystem: 1,
-      targetComponent: 1,
+      targetSystem: _targetSystemId,
+      targetComponent: _targetComponentId,
       command: 22, // MAV_CMD_NAV_TAKEOFF
       confirmation: 0,
       param1: 0, // Pitch
@@ -169,8 +191,8 @@ class DroneController {
   /// Send land command to the drone
   void land() {
     final landCommand = mavlink.CommandLong(
-      targetSystem: 1,
-      targetComponent: 1,
+      targetSystem: _targetSystemId,
+      targetComponent: _targetComponentId,
       command: 21, // MAV_CMD_NAV_LAND
       confirmation: 0,
       param1: 0, // Abort altitude
@@ -223,7 +245,7 @@ class DroneController {
     }
 
     final setModeMessage = mavlink.SetMode(
-      targetSystem: 1,
+      targetSystem: _targetSystemId,
       baseMode: 1, // MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
       customMode: modeNumber,
     );
@@ -244,4 +266,4 @@ class DroneController {
 }
 
 /// Enum representing drone states based on hinge angle
-enum DroneState { unknown, disarmed, armed, rcOverride }
+enum DroneState { unknown, disarmed, armed }

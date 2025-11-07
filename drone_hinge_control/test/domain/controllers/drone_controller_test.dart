@@ -26,6 +26,8 @@ void main() {
         () => mockHingeAngleService.hingeAngleStream,
       ).thenAnswer((_) => hingeAngleController.stream);
       when(() => mockMavlinkService.sendCommand(any())).thenAnswer((_) {});
+      when(() => mockMavlinkService.targetSystemId).thenReturn(1);
+      when(() => mockMavlinkService.targetComponentId).thenReturn(1);
 
       droneController = DroneController(
         hingeAngleService: mockHingeAngleService,
@@ -54,18 +56,18 @@ void main() {
       // Subscription should be cancelled, no exception should be thrown
     });
 
-    test('hinge angle 0-30 degrees triggers disarm command', () async {
+    test('hinge angle near 0 degrees triggers disarm command', () async {
       droneController.startMonitoring();
 
-      hingeAngleController.add(15.0);
+      hingeAngleController.add(5.0);
       await Future.delayed(const Duration(milliseconds: 100));
 
       expect(droneController.currentState, DroneState.disarmed);
-      expect(droneController.currentHingeAngle, 15.0);
+      expect(droneController.currentHingeAngle, 5.0);
       verify(() => mockMavlinkService.sendCommand(any())).called(1);
     });
 
-    test('hinge angle 60-120 degrees triggers arm command', () async {
+    test('hinge angle near 90 degrees triggers arm command', () async {
       droneController.startMonitoring();
 
       hingeAngleController.add(90.0);
@@ -76,15 +78,15 @@ void main() {
       verify(() => mockMavlinkService.sendCommand(any())).called(1);
     });
 
-    test('hinge angle 150-180 degrees triggers RC override', () async {
+    test('hinge angles far from targets stay unknown', () async {
       droneController.startMonitoring();
 
-      hingeAngleController.add(170.0);
+      hingeAngleController.add(150.0);
       await Future.delayed(const Duration(milliseconds: 100));
 
-      expect(droneController.currentState, DroneState.rcOverride);
-      expect(droneController.currentHingeAngle, 170.0);
-      verify(() => mockMavlinkService.sendCommand(any())).called(1);
+      expect(droneController.currentState, DroneState.unknown);
+      expect(droneController.currentHingeAngle, 150.0);
+      verifyNever(() => mockMavlinkService.sendCommand(any()));
     });
 
     test('state transitions do not trigger repeated commands', () async {
@@ -125,6 +127,16 @@ void main() {
 
     test('land sends land command', () {
       droneController.land();
+      verify(() => mockMavlinkService.sendCommand(any())).called(1);
+    });
+
+    test('arm sends arm command', () {
+      droneController.arm();
+      verify(() => mockMavlinkService.sendCommand(any())).called(1);
+    });
+
+    test('disarm sends disarm command', () {
+      droneController.disarm();
       verify(() => mockMavlinkService.sendCommand(any())).called(1);
     });
 
