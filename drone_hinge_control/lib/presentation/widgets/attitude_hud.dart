@@ -65,6 +65,8 @@ class _AttitudeHudPainter extends CustomPainter {
   _AttitudeHudPainter(this.attitude);
 
   static const double _maxPitchDegrees = 45;
+  static const Color _skyColor = Color(0xAA1E88E5);
+  static const Color _groundColor = Color(0xAA2E7D32);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -87,15 +89,31 @@ class _AttitudeHudPainter extends CustomPainter {
     final pitch = attitudeData.pitch;
     final yaw = attitudeData.yaw;
 
-    // Draw horizon with roll rotation.
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(-roll);
-
     final pitchDegrees = pitch * 180 / math.pi;
     final pitchRatio = (pitchDegrees / _maxPitchDegrees).clamp(-1.0, 1.0);
     final pitchOffset = pitchRatio * radius * 0.8;
 
+    // Clip to circular HUD and draw colored sky/ground background with roll.
+    final hudClipPath =
+        Path()..addOval(Rect.fromCircle(center: center, radius: radius));
+    canvas.save();
+    canvas.clipPath(hudClipPath);
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(-roll);
+
+    final skyPaint = Paint()..color = _skyColor;
+    final groundPaint = Paint()..color = _groundColor;
+    final backgroundExtent = radius * 2;
+    canvas.drawRect(
+      Rect.fromLTRB(-radius, -backgroundExtent, radius, pitchOffset),
+      skyPaint,
+    );
+    canvas.drawRect(
+      Rect.fromLTRB(-radius, pitchOffset, radius, backgroundExtent),
+      groundPaint,
+    );
+
+    // Draw horizon with roll rotation.
     final horizonPaint = Paint()
       ..color = Colors.orangeAccent
       ..strokeWidth = 3;
@@ -200,4 +218,3 @@ class _AttitudeHudPainter extends CustomPainter {
     return oldDelegate.attitude != attitude;
   }
 }
-
