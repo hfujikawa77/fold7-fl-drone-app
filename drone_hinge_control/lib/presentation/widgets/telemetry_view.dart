@@ -1,18 +1,11 @@
-import 'package:flutter/material.dart';
 import 'package:dart_mavlink/dialects/ardupilotmega.dart' as mavlink;
-import 'dart:math' as math;
+import 'package:flutter/material.dart';
 
-/// Widget to display drone telemetry data
+/// Widget to display essential telemetry data (position only).
 class TelemetryView extends StatelessWidget {
-  final mavlink.Attitude? attitude;
   final mavlink.GlobalPositionInt? position;
 
-  const TelemetryView({super.key, this.attitude, this.position});
-
-  /// Convert radians to degrees
-  double _radToDeg(double rad) {
-    return rad * 180.0 / math.pi;
-  }
+  const TelemetryView({super.key, this.position});
 
   @override
   Widget build(BuildContext context) {
@@ -29,38 +22,6 @@ class TelemetryView extends StatelessWidget {
             ),
             const Divider(),
             const SizedBox(height: 8),
-
-            // Attitude section
-            const Text(
-              'Attitude',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 4),
-            if (attitude != null) ...[
-              _buildDataRow(
-                'Roll',
-                '${_radToDeg(attitude!.roll).toStringAsFixed(2)}°',
-                Icons.rotate_right,
-              ),
-              _buildDataRow(
-                'Pitch',
-                '${_radToDeg(attitude!.pitch).toStringAsFixed(2)}°',
-                Icons.rotate_left,
-              ),
-              _buildDataRow(
-                'Yaw',
-                '${_radToDeg(attitude!.yaw).toStringAsFixed(2)}°',
-                Icons.explore,
-              ),
-            ] else ...[
-              const Text(
-                'No attitude data',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ],
-            const SizedBox(height: 16),
-
-            // Position section
             const Text(
               'Position',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -129,3 +90,4 @@ class TelemetryView extends StatelessWidget {
     );
   }
 }
+
